@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<metadata>
+	<idinfo>
+		<citation>
+			<citeinfo>
+				<origin>Originator -- the name of an organization or individual that developed the data set; if not provided, leave blank</origin>
+				<pubdate>Publication Date -- the date when the data set is published or otherwise made available for release; if not provided, leave blank</pubdate>
+                <title>(GISIRequired) Title -- the name by which the data set is known</title>
+				<onlink>Organization main website URL; if not provided, leave blank</onlink>
+			</citeinfo>
+		</citation>
+		<descript>
+			<abstract>(GISIRequired) A brief description of the dataset.</abstract>
+			<purpose>A brief description of the purpose of the dataset; if not provided, leave blank</purpose>
+		</descript>
+		<timeperd>
+			<timeinfo>
+				<sngdate>
+					<caldate>Time Period of Content -- information about the date; if not provided, then leave blank</caldate>
+				</sngdate>
+			</timeinfo>
+			<current>Currentness Reference -- the basis on which the time period of content information is determined. Domain: "ground condition" "publication date"; if blank GISI will use "publication date"</current>
+		</timeperd>
+		<status>
+			<progress>(GISIRequired) Progress -- the state of the data set. Domain: "Complete" "In work" "Planned"; if blank, GISI will use "Complete"</progress>
+			<update>Maintenance and Update Frequency -- the frequency with which changes and additions are made to the data set after the initial data set is completed. Domain: "Continually" "Daily" "Weekly" "Monthly" "Annually" "Unknown" "As needed" "Irregular" "None planned"; if not provided, then leave blank</update>
+		</status>
+		<spdom>
+			<bounding>
+				<westbc>[[westbc] from imported metadata, if provided; if not provided, GISI will generate from account geography]</westbc>
+				<eastbc>[[eastbc] from imported metadata, if provided; if not provided, GISI will generate from account geography]</eastbc>
+				<northbc>[[northbc] from imported metadata, if provided; if not provided, GISI will generate from account geography]</northbc>
+				<southbc>[[southbc] from imported metadata, if provided; GISI will generate from account geography]</southbc>
+			</bounding>
+		</spdom>
+		<keywords>
+			<theme>
+				<themekt>Theme Keyword Thesaurus -- reference to a formally registered thesaurus or a similar authoritative source of theme keywords; if not provided, then Domain: "None"</themekt>
+					<themekey>(repeatable element)-1 Theme Keyword -- common-use word or phrase used to describe the subject of the data set; if not provided, then leave blank</themekey>
+					<themekey>(repeatable element)-2</themekey>
+					<themekey>(repeatable element)-n</themekey>				
+			</theme>		
+			<place>
+                <placekt>Place Keyword Thesaurus -- reference to a formally registered thesaurus or a similar authoritative source of place keywords; if not provided, then Domain: "None"</placekt>
+                	<placekey>(repeatable element)-1 Place Keyword -- the geographic name of a location covered by a data set; if not provided, then leave blank</placekey>
+                	<placekey>(repeatable element)-2</placekey>
+                	<placekey>(repeatable element)-n</placekey>
+			</place>		
+		</keywords>
+		<accconst>Access Constraints -- restrictions and legal prerequisites for accessing the data set. These include any access constraints applied to assure the protection of privacy or intellectual property, and any special restrictions or limitations on obtaining the data set; if not provided then Domain: "None" or leave blank.</accconst>
+		<useconst>Use Constraints -- restrictions and legal prerequisites for using the data set after access is granted. These include any use constraints applied to assure the protection of privacy or intellectual property, and any special restrictions or limitations on using the data set; if not provided then Domain: "None" or leave blank.</useconst>
+		<ptcontac>
+			<cntinfo>
+				<cntorgp>
+					<cntorg>Point of Contact Org -- organization that is knowledgeable about the data set; if not provided, then leave blank</cntorg>
+					<cntper>Point of Contact Person -- individual that is knowledgeable about the data set; if not provided, then leave blank</cntper>
+				</cntorgp>
+                <cntpos>Point of Contact Position; if not provided, then leave blank</cntpos>
+				<cntaddr>
+					<addrtype>mailing and physical address</addrtype>
+					<address>Point of Contact Address; if not provided, then leave blank</address>
+					<city>Point of Contact City; if not provided, then leave blank</city>
+					<state>Point of Contact State; if not provided, then leave blank</state>
+					<postal>Point of Contact Zip; if not provided, then leave blank</postal>
+				</cntaddr>
+				<cntvoice>Point of Contact Phone; if not provided, then leave blank</cntvoice>
+			</cntinfo>
+		</ptcontac>
+	</idinfo>
+	<distinfo>
+        <distrib>
+            <cntinfo>
+                <cntorgp>
+					<cntorg>Distributor Org Contact_Information</cntorg>
+					<cntper>Distributor Person Point of Contact=</cntper>
+				</cntorgp>
+                <cntpos>Point of Contact Position; if not provided, then leave blank</cntpos>
+				<cntaddr>
+					<addrtype>mailing and physical address</addrtype>
+					<address>Distributor Org Address; if not provided, then leave blank</address>
+					<city>Distributor Org City; if not provided, then leave blank</city>
+					<state>Distributor Org State</state>
+					<postal>Distributor Org Zip; if not provided, then leave blank</postal>
+				</cntaddr>
+				<cntvoice>Distributor Org Phone; if not provided, then leave blank</cntvoice>
+            </cntinfo>
+        </distrib>
+        <distliab>Distribution Liability -- statement of the liability assumed by the distributor; if not provided, then Domain: "None" or leave blank</distliab>
+		<stdorder>
+			<digform> 
+				<digtinfo>
+					<formname>(GISIRequired - Repeatable element - Please include at least one (+ all applicable) resource links) Format Name -- e.g., Domain: "Downloadable Resource" "Downloadable Shapefile" "Downloadable File Geodatabase""Web Map Service (WMS)" "Web Feature Service (WFS)" "Web Coverage Service (WCS)" "ESRI REST" "Web Map Viewer"</formname>
+				</digtinfo> 
+				<digtopt>
+					<onlinopt> 
+						<computer>
+							<networka> 
+								<networkr>(GISIRequired - Repeatable element - Please include at least one (+ all applicable) resource links) Network Address -- Direct link to dataset resource as per above Format Name, e.g., "ftp://mystate.gov/addrespoints.zip" "https://mystate.gov/rest/service/" "http://mystate.gov/mapviewer."</networkr>
+							</networka> 
+						</computer>
+					</onlinopt> 
+				</digtopt>
+			</digform>
+			<digform> 
+				<digtinfo>
+					<formname>(repeatable element)-2</formname>
+				</digtinfo> 
+				<digtopt>
+					<onlinopt> 
+						<computer>
+							<networka> 
+								<networkr>(repeatable element)-2</networkr>
+							</networka> 
+						</computer>
+					</onlinopt> 
+				</digtopt>
+			</digform>
+			<digform> 
+				<digtinfo>
+					<formname>(repeatable element)-n</formname>
+				</digtinfo> 
+				<digtopt>
+					<onlinopt> 
+						<computer>
+							<networka> 
+								<networkr>(repeatable element)-n</networkr>
+							</networka> 
+						</computer>
+					</onlinopt> 
+				</digtopt>
+			</digform>
+		<fees>Not applicable</fees> 
+		</stdorder>
+    </distinfo>
+	<metainfo>
+		<metd>Metadata Date -- the date that the metadata were created or last updated; if not provided, then leave blank</metd>
+		<metrd>Metadata Review Date -- the date of the latest review of the metadata entry; if not provided, then leave blank</metrd>
+		<metc>
+            <cntinfo>
+				<cntorgp>
+					<cntorg>Metadata Org Contact_Information; if not provided, then leave blank</cntorg>
+				</cntorgp>
+				<cntaddr>
+					<addrtype>mailing and physical address; if not provided, then leave blank</addrtype>
+					<address>Metadata Org Address; if not provided, then leave blank</address>
+					<city>Metadata Org City; if not provided, then leave blank</city>
+					<state>Metadata Org State; if not provided, then leave blank</state>
+					<postal>Metadata Org Zip; if not provided, then leave blank</postal>
+					<country>USA; if not provided, then leave blank</country>
+				</cntaddr>
+                <cntvoice>Metadata Org Phone; if not provided, then leave blank</cntvoice>
+				<cntemail>Metadata Org Email; if not provided, then leave blank</cntemail>
+			</cntinfo>
+		</metc>
+		<metstdn>FGDC Content Standard for Digital Geospatial Metadata</metstdn>
+		<metstdv>FGDC-STD-001-1998</metstdv>
+	</metainfo>
+</metadata>
