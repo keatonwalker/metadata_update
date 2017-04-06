@@ -248,6 +248,21 @@ class BaseTranslator(GisiXml):
             self.keywords.append(e.text)
 
 
+class LakesTranslator(BaseTranslator):
+
+    def __init__(self,
+                 sgid_xml=r'data/SGID10.WATER.Lakes.xml',
+                 resources=(
+                     (FormName.DOWNLOADABLE_GDB,
+                      'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Lakes/_Statewide/Lakes_gdb.zip'),
+                     (FormName.DOWNLOADABLE_SHAPEFILE,
+                      'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Lakes/_Statewide/Lakes_shp.zip')
+                 )):
+        super(LakesTranslator, self).__init__(sgid_xml, resources)
+        BaseTranslator.all_translators.append(self)
+        self.setup()
+
+
 def export_sgid_metadata(output_directory,
                          workspace=r'Database Connections\Connection to sgid.agrc.utah.gov.sde',
                          feature_classes=None):
@@ -277,6 +292,12 @@ def get_features_in_category(categories, json_featureclasses=r'data/outputs/temp
     return featurenames
 
 
+def get_categories(json_featureclasses=r'data/outputs/temp/fcs.json'):
+    fcs = load_json(json_featureclasses)['featureclasses']
+    category_names = [fc.split('.')[1] for fc in fcs]
+    return set(category_names)
+
+
 def load_json(json_path):
     with open(json_path, 'r') as json_file:
         properties = json.load(json_file)
@@ -303,6 +324,8 @@ def create_gisi_metadata(metadata_xml_paths):
 
 
 if __name__ == '__main__':
+    catnames = get_categories()
+    save_json('connections.json', {cat: "Database Connections\\DC_{}@SGID10@sgid.agrc.utah.gov.sde".format(cat.title()) for cat in catnames})
     # featurenames = get_features_in_category(
     #     [
     #         'HEALTH',
@@ -313,6 +336,11 @@ if __name__ == '__main__':
     #     ]
     # )
     # featurenames.remove('SGID10.HEALTH.HealthCareFacilities')
-    featurenames = ['SGID10.GEOSCIENCE.Units_MoabSanRafael']
-    #export_sgid_metadata('data', feature_classes=featurenames)
+    featurenames = [
+        'SGID10.WATER.LakesNHDHighRes',
+        'SGID10.WATER.StreamsNHDHighRes',
+        'SGID10.WATER.SpringsNHDHighRes',
+        'SGID10.WATER.NHDHighRes_PointsAll',
+        'SGID10.WATER.StreamGaugesNHD']
+    export_sgid_metadata('data', feature_classes=featurenames)
     create_gisi_metadata([os.path.join('data', f + '.xml') for f in featurenames])

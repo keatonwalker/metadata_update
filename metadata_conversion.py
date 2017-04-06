@@ -3,10 +3,11 @@
 import os
 import re
 import json
+from ntpath import normpath
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime
-from time import strftime
+from time import strftime, clock
 import drive_loader
 import csv
 import gspread
@@ -16,7 +17,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 date_time_run = strftime("%Y%m%d_%H%M%S")
 
 
-EMPTY_TEMPLATE_TREE = r'templates/GISI-metadata-empty-machine.xml'
 LAST_GISI_OUTPUT = 'data/outputs/temp/lastgisi_output.json'
 
 
@@ -30,1022 +30,6 @@ GISI_UPDATED_PROPERTY = 'metaGisiUpdated'
 
 
 DEFUALT_DISCLAIMER = '''There are no constraints or warranties with regard to the use of this dataset. Users are encouraged to attribute content to: State of Utah, SGID.This product is for informational purposes and may not have been prepared for, or be suitable for legal, engineering, or surveying purposes. Users of this information should review or consult the primary data and information sources to ascertain the usability of the information. AGRC provides these data in good faith and shall in no event be liable for any incorrect results, any lost profits and special, indirect or consequential damages to any party, arising out of or in connection with the use or the inability to use the data hereon or the services provided. AGRC provides these data and services as a convenience to the public. Further more, AGRC reserves the right to change or revise published data and/or these services at any time.'''
-
-
-DIGFORM_STRING = '''<digform><digtinfo><formname></formname></digtinfo><digtopt><onlinopt><computer><networka><networkr></networkr></networka></computer></onlinopt></digtopt></digform>'''
-
-
-class Current(object):
-    GROUND_CONDITION = 'ground condition'
-    PUBLICATION_DATE = 'publication date'
-
-
-class Progress(object):
-    COMPLETE = 'Complete'
-    IN_WORK = 'In work'
-    PLANNED = 'Planned'
-
-
-class Update(object):
-    CONTINUALLY = 'Continually'
-    DAILY = 'Daily'
-    WEEKLY = 'Weekly'
-    MONTHLY = 'Monthly'
-    ANNUALLY = 'Annually'
-    AS_NEEDED = 'As needed'
-    IRREGULAR = 'Irregular'
-    NONE = 'None planned'
-
-
-class FormName(object):
-    DOWNLOADABLE_RESOURCE = 'Downloadable Resource'
-    DOWNLOADABLE_SHAPEFILE = 'Downloadable Shapefile'
-    DOWNLOADABLE_GDB = 'Downloadable File Geodatabase'
-    WEB_MAP_SERVICE = 'Web Map Service (WMS)'
-    WEB_FEATURE_SERVICE = 'Web Feature Service (WFS)'
-    WEB_COVERAGE_SERVICE = 'Web Coverage Service (WCS)'
-    ESRI_REST = 'ESRI REST'
-    WEB_MAP_VIEWER = 'Web Map Viewer'
-
-
-class GisiXml(object):
-    '''Store the important elements of the GISI metadata document'''
-
-    def __init__(self, template_tree):
-        self.straight_writes = []
-        self.output_xml = None
-        self.template_tree = template_tree
-        # citation
-        self.origin = 'Utah Automated Geographic Reference Center (AGRC)'
-        self.straight_writes.append('origin')
-        self.pubdate = None
-        self.straight_writes.append('pubdate')
-        self.title = None
-        self.straight_writes.append('title')
-        self.onlink = 'https://gis.utah.gov/'
-        self.straight_writes.append('onlink')
-        # descript
-        self.abstract = None
-        self.straight_writes.append('abstract')
-        self.purpose = None
-        self.straight_writes.append('purpose')
-        # timeperd
-        self.caldate = None
-        self.straight_writes.append('caldate')
-        self.current = None
-        self.straight_writes.append('current')
-        # status
-        self.progress = Progress.COMPLETE
-        self.straight_writes.append('progress')
-        self.update = Update.AS_NEEDED
-        self.straight_writes.append('update')
-        # spdom
-        self.westbc = None
-        self.straight_writes.append('westbc')
-        self.eastbc = None
-        self.straight_writes.append('eastbc')
-        self.northbc = None
-        self.straight_writes.append('northbc')
-        self.southbc = None
-        self.straight_writes.append('southbc')
-        # keywords
-        self.themekt = None
-        self.straight_writes.append('themekt')
-        self.keywords = []
-        self.placekt = None
-        self.straight_writes.append('placekt')
-        self.placekeys = ['Utah']
-        # accconst
-        self.accconst = None
-        self.straight_writes.append('accconst')
-        # useconst
-        self.useconst = DEFUALT_DISCLAIMER
-        self.straight_writes.append('useconst')
-        # ptcontact, distinfo, metainfo
-        self.cntorg = 'Utah AGRC'
-        self.straight_writes.append('cntorg')
-        self.cntper = None
-        self.straight_writes.append('cntper')
-        self.addrtype = 'mailing and physical address'
-        self.straight_writes.append('addrtype')
-        self.address = 'Utah Automated Geographic Reference 1 State Office Building, Room 5130'
-        self.straight_writes.append('address')
-        self.city = 'Salt Lake City'
-        self.straight_writes.append('city')
-        self.state = 'UT'
-        self.straight_writes.append('state')
-        self.postal = '84114'
-        self.straight_writes.append('postal')
-        self.cntvoice = '801-538-3665'
-        self.straight_writes.append('cntvoice')
-        # digform
-        self.resource_locations = None
-
-    def _add_digform_elements(self):
-        stdorder = self.template_tree.getroot().find('distinfo').find('stdorder')
-        insert_i = 0
-        for resource in self.resource_locations:
-            formname, networkr = resource
-            digform = ET.fromstring(DIGFORM_STRING)
-            digform.find('digtinfo').find('formname').text = formname
-            for e in digform.iter('networkr'):
-                e.text = networkr
-            stdorder.insert(insert_i, digform)
-            insert_i += 1
-
-    def _add_keyword_elements(self):
-        theme = self.template_tree.getroot().find('idinfo').find('keywords').find('theme')
-        for themekey in self.keywords:
-            tk = ET.SubElement(theme, 'themekey')
-            tk.text = themekey
-
-    def _add_placekey_elements(self):
-        place = self.template_tree.getroot().find('idinfo').find('keywords').find('place')
-        for placekey in self.placekeys:
-            tk = ET.SubElement(place, 'placekey')
-            tk.text = placekey
-
-    def write_fields_to_xml(self):
-        self._add_keyword_elements()
-        self._add_placekey_elements()
-        self._add_digform_elements()
-
-        root = self.template_tree.getroot()
-        for xml_element_name in self.straight_writes:
-            text = getattr(self, xml_element_name)
-            if text is not None:
-                for e in root.iter(xml_element_name):
-                        e.text = text
-
-        # self.template_tree.write(output_xml_path, method='html')
-        with open(self.output_xml, 'wb') as pxml:
-            for line in self.prettify(self.template_tree.getroot()):
-                pxml.write(line.encode("UTF-8"))
-
-    def prettify(self, root_element):
-        '''Return a pretty-printed XML string for the Element.
-        '''
-        rough_string = ET.tostring(root_element, 'utf-8')
-        reparsed = minidom.parseString(rough_string)
-        return reparsed.toprettyxml(indent="    ")
-
-
-class BaseTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-
-    all_translators = []
-
-    def __init__(self, empty_template_tree=None):
-        if empty_template_tree is None:
-            empty_template_tree = ET.parse(r'templates/GISI-metadata-empty-machine.xml')
-
-        super(BaseTranslator, self).__init__(empty_template_tree)
-        self.sgid_xml = None
-        self.name = None
-        self.output_xml = None
-        self.root = None
-        self.direct_reads = [
-            'abstract',
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-            'caldate',
-            'themekt'
-        ]
-
-    def setup(self):
-        self.set_name()
-        self.output_xml = r'data/outputs/{}.xml'.format(self.name)
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.set_direct_reads()
-        self.set_citation_elements()
-        self.set_time_period()
-        self.set_keywords()
-
-    def set_name(self):
-        self.name = self.sgid_xml.split('/')[-1].strip('.xml')
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    def set_citation_elements(self):
-        try:
-            for e in self.root.iter('title'):
-                self.title = e.text.split('.')[2]
-        except IndexError:
-            self.title = os.path.basename(self.sgid_xml).split('.')[-2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_time_period(self):
-        if self.caldate is None:
-            self.caldate = strftime('%Y')
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-
-class RoadsTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-    def __init__(self, empty_template_tree):
-        super(RoadsTranslator, self).__init__(empty_template_tree)
-        self.sgid_xml = r'data/SGID10.TRANSPORTATION.Roads.xml'
-        self.name = 'SGID10.TRANSPORTATION.Roads'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/Roads/_Statewide/Roads_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/Roads/_Statewide/Roads_shp.zip')
-        )
-        self.output_xml = r'data/outputs/SGID10.TRANSPORTATION.Roads.xml'
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.direct_reads = [
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-        ]
-        self.set_direct_reads()
-        # self.set_resource_locations(resource_locations)
-        self.set_citation_elements()
-        self.set_descript_elements()
-        self.set_keywords()
-        self.set_time_period()
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    # def set_resource_locations(self, resource_locations):
-    #     self.resource_locations = resource_locations
-
-    def set_citation_elements(self):
-        for e in self.root.iter('title'):
-            self.title = e.text.split('.')[2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_descript_elements(self):
-        for e in self.root.iter('abstract'):
-            self.abstract = e.text[56:]  # Remove some junk at the beginning
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-    def set_time_period(self):
-        self.caldate = strftime('%Y')
-
-
-class CountiesTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-    def __init__(self, empty_template_tree):
-        super(CountiesTranslator, self).__init__(empty_template_tree)
-        self.sgid_xml = r'data/SGID10.BOUNDARIES.Counties.xml'
-        self.name = 'SGID10.BOUNDARIES.Counties'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/Counties/_Statewide/Counties_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/Counties/_Statewide/Counties_shp.zip')
-        )
-        self.output_xml = r'data/outputs/SGID10.BOUNDARIES.Counties.xml'
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.direct_reads = [
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-            'caldate',
-            'themekt'
-        ]
-        self.set_direct_reads()
-        self.set_citation_elements()
-        self.set_descript_elements()
-        self.set_keywords()
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    def set_citation_elements(self):
-        for e in self.root.iter('title'):
-            self.title = e.text.split('.')[2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_descript_elements(self):
-        for e in self.root.iter('abstract'):
-            self.abstract = e.text
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-
-class MunicipalitiesTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-    def __init__(self, empty_template_tree):
-        super(MunicipalitiesTranslator, self).__init__(empty_template_tree)
-        self.sgid_xml = r'data/SGID10.BOUNDARIES.Municipalities.xml'
-        self.name = 'SGID10.BOUNDARIES.Municipalities'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/Municipalities/_Statewide/Municipalities_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/Municipalities/_Statewide/Municipalities_shp.zip')
-        )
-        self.output_xml = r'data/outputs/SGID10.BOUNDARIES.Municipalities.xml'
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.direct_reads = [
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-            'caldate',
-            'themekt'
-        ]
-        self.set_direct_reads()
-        self.set_citation_elements()
-        self.set_descript_elements()
-        self.set_keywords()
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    def set_citation_elements(self):
-        for e in self.root.iter('title'):
-            self.title = e.text.split('.')[2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_descript_elements(self):
-        for e in self.root.iter('abstract'):
-            self.abstract = e.text
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-
-class AddressPointsTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-    def __init__(self, empty_template_tree=EMPTY_TEMPLATE_TREE):
-        super(AddressPointsTranslator, self).__init__(empty_template_tree)
-        self.sgid_xml = r'data/SGID10.LOCATION.AddressPoints.xml'
-        self.name = 'SGID10.LOCATION.AddressPoints'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/LOCATION/UnpackagedData/AddressPoints/_Statewide/AddressPoints_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/LOCATION/UnpackagedData/AddressPoints/_Statewide/AddressPoints_shp.zip'),
-            (FormName.WEB_MAP_SERVICE,
-             'http://utah.maps.arcgis.com/home/item.html?id=5b92021338f64f5ba77765d6fc47cbc9')
-        )
-        self.output_xml = r'data/outputs/SGID10.LOCATION.AddressPoints.xml'
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.direct_reads = [
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-            'caldate',
-            'themekt'
-        ]
-        self.set_direct_reads()
-        self.set_citation_elements()
-        self.set_descript_elements()
-        self.set_keywords()
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    def set_citation_elements(self):
-        for e in self.root.iter('title'):
-            self.title = e.text.split('.')[2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_descript_elements(self):
-        for e in self.root.iter('abstract'):
-            self.abstract = e.text
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-
-class PlssTranslator(GisiXml):
-    '''Translation functions that set fields of GisiXml document'''
-
-    all_translators = []
-
-    def __init__(self, empty_template_tree=EMPTY_TEMPLATE_TREE):
-        super(PlssTranslator, self).__init__(empty_template_tree)
-        self.name = None
-        self.output_xml = None
-        self.root = None
-        self.direct_reads = [
-            'abstract',
-            'purpose',
-            'accconst',
-            'useconst',
-            'westbc',
-            'eastbc',
-            'northbc',
-            'southbc',
-            'caldate',
-            'themekt'
-        ]
-
-    def setup(self):
-        self.output_xml = r'data/outputs/{}.xml'.format(self.name)
-        self.root = ET.parse(self.sgid_xml).getroot()
-
-        self.set_direct_reads()
-        self.set_citation_elements()
-        self.set_time_period()
-        self.set_keywords()
-
-    def set_direct_reads(self):
-        for element_name in self.direct_reads:
-            for e in self.root.iter(element_name):
-                setattr(self, element_name, e.text)
-
-    def set_citation_elements(self):
-        for e in self.root.iter('title'):
-            self.title = e.text.split('.')[2]
-
-        self.pubdate = strftime('%Y%m%d')
-
-    def set_time_period(self):
-        self.caldate = strftime('%Y')
-
-    def set_keywords(self):
-        for e in self.root.iter('themekey'):
-            self.keywords.append(e.text)
-
-
-class PlssPointsTranslator(PlssTranslator):
-
-    def __init__(self):
-        super(PlssPointsTranslator, self).__init__()
-
-        PlssTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.PLSSPoint_GCDB.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSPoint_GCDB/_Statewide/PLSSPoint_GCDB_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSPoint_GCDB/_Statewide/PLSSPoint_GCDB_shp.zip')
-        )
-        self.name = 'SGID10.CADASTRE.PLSSPoint_GCDB'
-        self.setup()
-
-
-class PlssQuarterQuarterSectionsTranslator(PlssTranslator):
-
-    def __init__(self):
-        super(PlssQuarterQuarterSectionsTranslator, self).__init__()
-
-        PlssTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.PLSSQuarterQuarterSections_GCDB.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSQuarterQuarterSections_GCDB/_Statewide/PLSSQuarterQuarterSections_GCDB_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSQuarterQuarterSections_GCDB/_Statewide/PLSSQuarterQuarterSections_GCDB_shp.zip')
-        )
-        self.name = 'SGID10.CADASTRE.PLSSQuarterQuarterSections_GCDB'
-        self.setup()
-
-
-class PlssQuarterSectionsTranslator(PlssTranslator):
-
-    def __init__(self):
-        super(PlssQuarterSectionsTranslator, self).__init__()
-
-        PlssTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.PLSSQuarterSections_GCDB.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSQuarterSections_GCDB/_Statewide/PLSSQuarterSections_GCDB_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSQuarterSections_GCDB/_Statewide/PLSSQuarterSections_GCDB_shp.zip')
-        )
-        self.name = 'SGID10.CADASTRE.PLSSQuarterSections_GCDB'
-
-        self.direct_reads.append('title')
-
-        self.setup()
-
-    def set_citation_elements(self):
-        self.pubdate = strftime('%Y%m%d')
-
-
-class PlssSectionsTranslator(PlssTranslator):
-
-    def __init__(self):
-        super(PlssSectionsTranslator, self).__init__()
-
-        PlssTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.PLSSSections_GCDB.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSSections_GCDB/_Statewide/PLSSSections_GCDB_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSSections_GCDB/_Statewide/PLSSSections_GCDB_shp.zip')
-        )
-        self.name = 'SGID10.CADASTRE.PLSSSections_GCDB'
-        self.setup()
-
-
-class PlssTownshipsTranslator(PlssTranslator):
-
-    def __init__(self):
-        super(PlssTownshipsTranslator, self).__init__()
-
-        PlssTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.PLSSTownships_GCDB.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSTownships_GCDB/_Statewide/PLSSTownships_GCDB_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/PLSSTownships_GCDB/_Statewide/PLSSTownships_GCDB_shp.zip')
-        )
-        self.name = 'SGID10.CADASTRE.PLSSTownships_GCDB'
-        self.setup()
-
-
-class SchoolDistrictsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SchoolDistrictsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.BOUNDARIES.SchoolDistricts.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/SchoolDistricts/_Statewide/SchoolDistricts_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/SchoolDistricts/_Statewide/SchoolDistricts_shp.zip')
-        )
-        self.setup()
-
-
-class ZipCodesTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(ZipCodesTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.BOUNDARIES.ZipCodes.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/ZipCodes/_Statewide/ZipCodes_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/BOUNDARIES/UnpackagedData/ZipCodes/_Statewide/ZipCodes_shp.zip')
-        )
-        self.setup()
-
-
-class LandOwnershipTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(LandOwnershipTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.LandOwnership.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/LandOwnership/_Statewide/LandOwnership_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/LandOwnership/_Statewide/LandOwnership_shp.zip')
-        )
-        self.setup()
-
-
-class TurnBaselineTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(TurnBaselineTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.TURN_GPS_BaseLines.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/TURN_GPS_BaseLines/_Statewide/TURN_GPS_BaseLines_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/TURN_GPS_BaseLines/_Statewide/TURN_GPS_BaseLines_shp.zip')
-        )
-        self.setup()
-
-
-class TurnStationsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(TurnStationsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.CADASTRE.TURN_GPS_Stations.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/TURN_GPS_Stations/_Statewide/TURN_GPS_Stations_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/CADASTRE/UnpackagedData/TURN_GPS_Stations/_Statewide/TURN_GPS_Stations_shp.zip')
-        )
-        self.setup()
-
-
-class SkiAreaBoundariesTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SkiAreaBoundariesTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.SkiAreaBoundaries.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiAreaBoundaries/_Statewide/SkiAreaBoundaries_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiAreaBoundaries/_Statewide/SkiAreaBoundaries_shp.zip')
-        )
-        self.setup()
-
-
-class SkiLiftsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SkiLiftsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.SkiLifts.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiLifts/_Statewide/SkiLifts_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiLifts/_Statewide/SkiLifts_shp.zip')
-        )
-        self.setup()
-
-
-class SkiAreaLocationsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SkiAreaLocationsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.SkiAreaLocations.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiAreaLocations/_Statewide/SkiAreaLocations_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiAreaLocations/_Statewide/SkiAreaLocations_shp.zip')
-        )
-        self.setup()
-
-
-class SkiTrailsXCTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SkiTrailsXCTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.SkiTrails_XC.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiTrails_XC/_Statewide/SkiTrails_XC_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/SkiTrails_XC/_Statewide/SkiTrails_XC_shp.zip')
-        )
-        self.setup()
-
-
-class TrailsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(TrailsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.Trails.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/Trails/_Statewide/Trails_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/Trails/_Statewide/Trails_shp.zip'),
-            (FormName.DOWNLOADABLE_RESOURCE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/Trails/_Statewide/Trails.json')
-        )
-        self.setup()
-
-
-class TrailHeadsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(TrailHeadsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.RECREATION.TrailHeads.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/Trailheads/_Statewide/Trailheads_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/RECREATION/UnpackagedData/Trailheads/_Statewide/Trailheads_shp.zip')
-        )
-        self.setup()
-
-
-class SchoolsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(SchoolsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.SOCIETY.Schools.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/SOCIETY/UnpackagedData/Schools/_Statewide/Schools_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/SOCIETY/UnpackagedData/Schools/_Statewide/Schools_shp.zip')
-        )
-        self.setup()
-
-
-class HealthCareTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(HealthCareTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.HEALTH.HealthCareFacilities.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/HEALTH/UnpackagedData/HealthCareFacilities/_Statewide/HealthCareFacilities_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/HEALTH/UnpackagedData/HealthCareFacilities/_Statewide/HealthCareFacilities_shp.zip')
-        )
-        self.setup()
-
-
-class UsCongressTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(UsCongressTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.POLITICAL.USCongressDistricts2012.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/USCongressDistricts2012/_Statewide/USCongressDistricts2012_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/USCongressDistricts2012/_Statewide/USCongressDistricts2012_shp.zip')
-        )
-        self.setup()
-
-
-class UtahHouseTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(UtahHouseTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.POLITICAL.UtahHouseDistricts2012.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahHouseDistricts2012/_Statewide/UtahHouseDistricts2012_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahHouseDistricts2012/_Statewide/UtahHouseDistricts2012_shp.zip')
-        )
-        self.setup()
-
-
-class UtahSenateTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(UtahSenateTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.POLITICAL.UtahSenateDistricts2012.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahSenateDistricts2012/_Statewide/UtahSenateDistricts2012_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahSenateDistricts2012/_Statewide/UtahSenateDistricts2012_shp.zip')
-        )
-        self.setup()
-
-
-class LiquorTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(LiquorTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.SOCIETY.LiquorStores.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahSenateDistricts2012/_Statewide/UtahSenateDistricts2012_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/POLITICAL/UnpackagedData/UtahSenateDistricts2012/_Statewide/UtahSenateDistricts2012_shp.zip')
-        )
-        self.setup()
-
-    # def set_citation_elements(self):
-    #
-    #     self.title = 'LiquorStores'
-    #
-    #     self.pubdate = strftime('%Y%m%d')
-
-
-class BusRoutesTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(BusRoutesTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.TRANSPORTATION.BusRoutes_UTA.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/BusRoutes_UTA/_Statewide/BusRoutes_UTA_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/BusRoutes_UTA/_Statewide/BusRoutes_UTA_shp.zip')
-        )
-        self.setup()
-
-
-class BusStopsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(BusStopsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.TRANSPORTATION.BusStops_UTA.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/BusStops_UTA/_Statewide/BusStops_UTA_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/BusStops_UTA/_Statewide/BusStops_UTA_shp.zip')
-        )
-        self.setup()
-
-
-class CommuterRailRoutesTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(CommuterRailRoutesTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.TRANSPORTATION.CommuterRailRoutes_UTA.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/CommuterRailRoutes_UTA/_Statewide/CommuterRailRoutes_UTA_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/CommuterRailRoutes_UTA/_Statewide/CommuterRailRoutes_UTA_shp.zip')
-        )
-        self.setup()
-
-
-class CommuterRailStationsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(CommuterRailStationsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.TRANSPORTATION.CommuterRailStations_UTA.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/CommuterRailStations_UTA/_Statewide/CommuterRailStations_UTA_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/TRANSPORTATION/UnpackagedData/CommuterRailStations_UTA/_Statewide/CommuterRailStations_UTA_shp.zip')
-        )
-        self.setup()
-
-
-class LakesTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(LakesTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.WATER.Lakes.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Lakes/_Statewide/Lakes_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Lakes/_Statewide/Lakes_shp.zip')
-        )
-        self.setup()
-
-
-class StreamsTranslator(BaseTranslator):
-
-    def __init__(self):
-        super(StreamsTranslator, self).__init__()
-
-        BaseTranslator.all_translators.append(self)
-
-        self.sgid_xml = r'data/SGID10.WATER.Streams.xml'
-        self.resource_locations = (
-            (FormName.DOWNLOADABLE_GDB,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Streams/_Statewide/Streams_gdb.zip'),
-            (FormName.DOWNLOADABLE_SHAPEFILE,
-             'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/WATER/UnpackagedData/Streams/_Statewide/Streams_shp.zip')
-        )
-        self.setup()
-
-
-def export_sgid_metadata(output_directory,
-                         workspace=r'Database Connections\Connection to sgid.agrc.utah.gov.sde',
-                         feature_classes=None):
-    '''Export metadata from feature class in feature_classes
-    '''
-    import arcpy
-    workspace = r'Database Connections\Connection to sgid.agrc.utah.gov.sde'
-    feature_classes = [
-        'SGID10.HEALTH.HealthCareFacilities',
-        'SGID10.SOCIETY.LiquorStores',
-        'SGID10.POLITICAL.USCongressDistricts2012',
-        'SGID10.POLITICAL.UtahHouseDistricts2012',
-        'SGID10.POLITICAL.UtahSenateDistricts2012',
-        'SGID10.TRANSPORTATION.BusStops_UTA',
-        'SGID10.TRANSPORTATION.BusRoutes_UTA',
-        'SGID10.TRANSPORTATION.CommuterRailRoutes_UTA',
-        'SGID10.TRANSPORTATION.CommuterRailStations_UTA',
-        'SGID10.WATER.Streams',
-        'SGID10.WATER.Lakes']
-    for feature in feature_classes:
-        print 'exporting {}'.format(feature)
-        arcpy.ExportMetadata_conversion(os.path.join(workspace, feature),
-                                        'C:\Program Files (x86)\ArcGIS\Desktop10.3\Metadata\Translator\ARCGIS2FGDC.xml',
-                                        os.path.join(output_directory, feature + '.xml'))
-
-
-def load_text_to_drive2(abstract_text, name, parent_id, suffix='_abstract'):
-    temp_txt = 'data/outputs/temp/temp_to_drive.txt'
-    if abstract_text is None:
-        abstract_text = ' '
-    with open(temp_txt, 'w') as txt:
-        txt.write(abstract_text.encode("UTF-8"))
-
-    doc_id = drive_loader.create_google_doc(temp_txt, parent_id, name + suffix)
-    return doc_id
 
 
 def load_text_to_drive(abstract_text, name, parent_id, suffix='_abstract'):
@@ -1079,10 +63,12 @@ def mark_updated(file_id, update_time):
     drive_loader.set_property(file_id, {'metaGisiUpdated': update_time})
 
 
-def update_xml_element(xml_path, element_text, element_name):
+def update_xml_element(xml_path, element_text, element_name, only_empty=False):
     element_tree = ET.parse(xml_path)
     root = element_tree.getroot()
     for e in root.iter(element_name):
+        if only_empty and not (e is None or e.text.strip() == '' or e.text.strip() == 'None'):
+            return
         e.text = element_text
     element_tree.write(xml_path, encoding='UTF-8')
 
@@ -1113,13 +99,16 @@ def assign_to_folder():
 
 def list_updated_files(date, parent_folder=ALL_FOLDER_ID):
     files = drive_loader.get_files_updated_after_in_directory(date, parent_folder)
-    for f in files:
-        print 'Updated: ', f['name']
+    # for f in files:
+    #     print 'Updated: ', f['name']
+    return files
 
 
-def load_json(json_path):
+def load_json(json_path, remove_update=False):
     with open(json_path, 'r') as json_file:
         properties = json.load(json_file)
+        if remove_update:
+            properties.pop('upload_time_local')
 
     return properties
 
@@ -1130,9 +119,9 @@ def save_json(json_path, properties):
         f_out.write(json.dumps(properties, sort_keys=True, indent=4))
 
 
-def check_files_and_update(past_update_time):
+def check_files_and_update(past_update_time, parent_folder=ALL_FOLDER_ID):
     update_time = datetime.utcnow().isoformat()
-    files = drive_loader.get_files_updated_after_in_directory(past_update_time, ALL_FOLDER_ID)
+    files = drive_loader.get_files_updated_after_in_directory(past_update_time, parent_folder)
     xml_paths = []
     for f in files:
         print 'Updating: ', f['name']
@@ -1140,14 +129,17 @@ def check_files_and_update(past_update_time):
         element_name = f['name'].split('_')[-1]
         new_text = drive_loader.get_doc_as_string(file_id)
         xml_name = drive_loader.get_property(file_id, SRC_FILE_NAME_PROPERTY)
-        print xml_name
         xml_path = os.path.join('data', 'outputs', xml_name)
         xml_paths.append(xml_path)
         update_xml_element(xml_path, new_text.replace('&', 'and'), element_name)
         mark_updated(file_id, update_time)
 
-    save_json('update_config.json', {'last_update': update_time})
-    return xml_paths
+    path_set = set(xml_paths)
+    for xml in path_set:
+        update_xml_element(xml_path, DEFUALT_DISCLAIMER, 'useconst', only_empty=True)
+
+    save_json('update_config.json', {'last_update': datetime.utcnow().isoformat()})
+    return list(set(xml_paths))
 
 
 def load_elements_to_drive(xml_files, elements):
@@ -1189,38 +181,20 @@ def get_empty_element_xml(xml_files, elements):
     save_json('data/outputs/temp/empties.json', {'empties': empties})
 
 
-def create_gisi_metadata():
-    # # Setup translators and write out new xml
-    HealthCareTranslator()
-    UsCongressTranslator()
-    UtahHouseTranslator()
-    UtahSenateTranslator()
-    LiquorTranslator()
-    BusRoutesTranslator()
-    BusStopsTranslator()
-    CommuterRailRoutesTranslator()
-    CommuterRailStationsTranslator()
-    LakesTranslator()
-    StreamsTranslator()
-
-    translators = BaseTranslator.all_translators
-    for translator in translators:
-        print translator.name
-        # translator.write_fields_to_xml()
-
-    # for t in BaseTranslator.all_translators:
-    #     print '{},'.format(os.path.basename(t.sgid_xml))
-
-
-def update_working_spreadsheet():
+def get_working_spreadsheet_completed_ids():
     scope = ['https://spreadsheets.google.com/feeds']
     credentials = ServiceAccountCredentials.from_json_keyfile_name(r'CenterlineSchema-c1b9c8e23e52.json', scope)
     gc = gspread.authorize(credentials)
     # spreadsheet must be shared with the email in credentials
-    spreadSheet = gc.open_by_url(r"https://docs.google.com/spreadsheets/d/1c-kwYFCID80XpRdQKbP96j0xxy5E9WVgHpyNR6GtO2Q/edit#gid=0")
+    spreadSheet = gc.open_by_url("https://docs.google.com/spreadsheets/d/1tX3mlUZ3nWIoTKxjiKlYG9U3njIRnJHF956wzS428qw/edit#gid=1226201523")
     # worksheets = spreadSheet.worksheets()
-    fieldWorkSheet = spreadSheet.worksheet('Sheet1')
-    print type(fieldWorkSheet.get_all_values()[0])
+    fieldWorkSheet = spreadSheet.worksheet('sheet.csv')
+    rows = fieldWorkSheet.get_all_values()
+    complete_ids = []
+    for row in rows:
+        if 'done' in row[1].lower():
+            complete_ids.append(row[3])
+    return complete_ids
 
 
 def get_feature_class_folders():
@@ -1275,22 +249,56 @@ def count_xml_files(directory):
 
     print count
 
+
+def import_metadata(xmls, connections_json='connections.json'):
+    import arcpy
+    connections = load_json(connections_json, remove_update=True)
+    for xml in xmls:
+        feature_name = os.path.basename(xml).replace('.xml', '')
+        category_name = feature_name.split('.')[1]
+        connection = connections[category_name]
+        print 'importing', feature_name
+        try:
+            arcpy.MetadataImporter_conversion(xml, os.path.join(connection, feature_name))
+        except Exception as e:
+            print xml, e.message
+
+
+def check_category_and_update(past_update_time, category_name):
+    category_id = drive_loader.get_file_id_by_name_and_directory(category_name, CATEGORIES_FOLDER)
+    feature_folder_ids = drive_loader.get_subfolder_ids(category_id)
+    updated_xml = []
+    for folder_id in feature_folder_ids:
+        updated_xml.extend(check_files_and_update(past_update_time, parent_folder=folder_id))
+
+    return updated_xml
+
+
 if __name__ == '__main__':
-    # # Setup translators and write out new xml
-    # create_gisi_metadata()
 
     # Check for updates
-    # past_update_time = load_json('update_config.json')['last_update']
-    # check_files_and_update(past_update_time)
-    # list_updated_files(past_update_time)
+    # past_update_time = "2017-02-01T19:01:53.630000" # load_json('update_config.json')['last_update']
+    # # updated_xml = check_category_and_update(past_update_time, 'RECREATION')
+    # # import_metadata(updated_xml)
+    #
+    # complete_folder_ids = get_working_spreadsheet_completed_ids()
+    # # print len(complete_folder_ids)
+    #
+    # updated_xml = []
+    # for folder_id in complete_folder_ids:
+    #     updated_xml.extend(check_files_and_update(past_update_time, parent_folder=folder_id))
+    #
+    # print len(updated_xml)
+    # import_metadata(updated_xml)
 
-    # Load elemets as google docs
-    # xml_files = ['data/outputs/SGID10.CADASTRE.Parcels.xml']#load_json(LAST_GISI_OUTPUT)['output_files']
-    # load_elements_to_drive(xml_files, ['purpose', 'abstract'])
+
+    # Load elements as google docs
+    xml_files = load_json(LAST_GISI_OUTPUT)['output_files']
+    load_elements_to_drive(xml_files, ['purpose', 'abstract'])
 
     # get_feature_class_folders()
     # add_full_name('data/outputs/lists/feature_folders.json')
-    count_xml_files('data')
+    # count_xml_files('data')
     # create_assign_csv('data/outputs/lists/feature_folders_name.json')
     # xml_files = []
     # for root, dirs, files in os.walk('data/outputs', topdown=True):
@@ -1298,18 +306,3 @@ if __name__ == '__main__':
     #         if name.endswith('.xml'):
     #             xml_files.append(os.path.join(root, name))
     # get_empty_element_xml(xml_files, ['abstract'])
-
-    # with open(r'data\outputs\temp\sheet.txt', 'w') as asstxt:
-    #     for root, dirs, files in os.walk('data\outputs', topdown=True):
-    #         for name in files:
-    #             if name.endswith('.xml'):
-    #                 n = name.split('.')[1] + '.' + name.split('.')[2]
-    #                 asstxt.write(n + '\n')
-    #                 print n
-                # xml_files.append(os.path.join(root, name))
-    # update_working_spreadsheet()
-    # fcs = []
-    # with open(r'data\outputs\temp\sheet.txt', 'r') as asstxt:
-    #     fcs = [line for line in asstxt]
-    #
-    # print fcs

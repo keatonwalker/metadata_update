@@ -60,10 +60,18 @@ def get_credentials():
 def get_file_comments(file_id, service=SERVICE):
     if not service:
         service = setup_drive_service()
-    file_comments = service.comments().list(fileId=file_id,
-                                            includeDeleted='false',
-                                            fields='comments(author(emailAddress),content,id,replies(content))').execute()
-    return file_comments['comments']
+    page_token = None
+    file_comments = []
+    while True:
+        response = service.comments().list(fileId=file_id,
+                                           includeDeleted='false',
+                                           fields='comments(author(emailAddress),content,id,replies(content))',
+                                           pageToken=page_token).execute()
+        file_comments.append(response['comments'])
+        page_token = response.get('nextPageToken', None)
+        if page_token is None:
+            break
+    return file_comments
     # for comment in file_comments['comments']:
     #     if comment['content'] == '#completed':
     #         print comment
@@ -109,6 +117,19 @@ def get_file_id_by_name_and_directory(name, parent_id, service=SERVICE):
         return None
 
 
+def get_subfolder_ids(parent_id, service=SERVICE):
+    if not service:
+        service = setup_drive_service()
+    response = service.files().list(q="mimeType = 'application/vnd.google-apps.folder' and '{}' in parents  and explicitlyTrashed=false".format(parent_id),
+                                    spaces='drive',
+                                    fields='files(id)').execute()
+    files = response.get('files', [])
+    if len(files) > 0:
+        return [f['id'] for f in files]
+    else:
+        return None
+
+
 def get_files_directly_in_directory(parent_id, service=SERVICE):
     if not service:
         service = setup_drive_service()
@@ -135,6 +156,28 @@ def get_abstracts_in_directory(parent_id, service=SERVICE):
     files = []
     while True:
         response = service.files().list(q="mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and name contains 'abstract'".format(parent_id),
+                                        spaces='drive',
+                                        fields='nextPageToken, files(id, name, parents)',
+                                        pageToken=page_token).execute()
+        files.extend(response.get('files', []))
+
+        page_token = response.get('nextPageToken', None)
+        if page_token is None:
+            break
+
+    return files
+
+
+def get_docs_for_category(category_name, parent_id, service=SERVICE):
+    if not service:
+        service = setup_drive_service()
+    page_token = None
+    files = []
+    query = "mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and name contains '{}'".format(parent_id,
+                                                                                                             category_name)
+    print query
+    while True:
+        response = service.files().list(q=query,
                                         spaces='drive',
                                         fields='nextPageToken, files(id, name, parents)',
                                         pageToken=page_token).execute()
@@ -278,7 +321,8 @@ def get_files_updated_after_in_directory(date, parent_id, service=SERVICE):
     while True:
         response = service.files().list(q="mimeType != 'application/vnd.google-apps.folder' and '{}' in parents and modifiedTime > '{}'".format(parent_id, date),
                                         spaces='drive',
-                                        fields='nextPageToken, files(id, name, modifiedTime)').execute()
+                                        fields='nextPageToken, files(id, name, modifiedTime)',
+                                        pageToken=page_token).execute()
         files.extend(response.get('files', []))
 
         page_token = response.get('nextPageToken', None)
@@ -339,7 +383,8 @@ def get_id_from_meta_src(meta_src_name, meta_src_property, service=SERVICE):
     while True:
         response = service.files().list(q=query,
                                         spaces='drive',
-                                        fields='nextPageToken, files(id, name)').execute()
+                                        fields='nextPageToken, files(id, name)',
+                                        pageToken=page_token).execute()
         files.extend(response.get('files', []))
 
         page_token = response.get('nextPageToken', None)
@@ -351,6 +396,7 @@ def get_id_from_meta_src(meta_src_name, meta_src_property, service=SERVICE):
 
 if __name__ == '__main__':
     # get auth
-    credentials = get_credentials()
-    http = credentials.authorize(httplib2.Http())
-    service = discovery.build('drive', 'v3', http=http)
+    # credentials = get_credentials()
+    # http = credentials.authorize(httplib2.Http())
+    # service = discovery.build('drive', 'v3', http=http)
+    print get_file_comments('1860SbceFkiOm4gxuJ2bClD4dkjMrT8KEEmLYY4qcjmo')
