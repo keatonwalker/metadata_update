@@ -277,10 +277,10 @@ def check_category_and_update(past_update_time, category_name):
 if __name__ == '__main__':
 
     # Check for updates
-    # past_update_time = "2017-02-01T19:01:53.630000" # load_json('update_config.json')['last_update']
-    # # updated_xml = check_category_and_update(past_update_time, 'RECREATION')
-    # # import_metadata(updated_xml)
-    #
+    past_update_time = load_json('update_config.json')['last_update']
+    updated_xml = check_category_and_update("2017-01-04T20:53:45.737000", 'WATER')
+    import_metadata(updated_xml)
+
     # complete_folder_ids = get_working_spreadsheet_completed_ids()
     # # print len(complete_folder_ids)
     #
@@ -293,8 +293,8 @@ if __name__ == '__main__':
 
 
     # Load elements as google docs
-    xml_files = load_json(LAST_GISI_OUTPUT)['output_files']
-    load_elements_to_drive(xml_files, ['purpose', 'abstract'])
+    # xml_files = load_json(LAST_GISI_OUTPUT)['output_files']
+    # load_elements_to_drive(xml_files, ['purpose', 'abstract'])
 
     # get_feature_class_folders()
     # add_full_name('data/outputs/lists/feature_folders.json')
@@ -306,3 +306,9 @@ if __name__ == '__main__':
     #         if name.endswith('.xml'):
     #             xml_files.append(os.path.join(root, name))
     # get_empty_element_xml(xml_files, ['abstract'])
+
+    # : List files updated after date
+    # updated = list_updated_files(past_update_time, )
+    # for f in updated:
+    #     print f
+    # print len(updated)

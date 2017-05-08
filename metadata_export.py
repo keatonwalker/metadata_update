@@ -1,7 +1,7 @@
 import os
 import re
 import json
-import arcpy
+# import arcpy
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime
@@ -323,24 +323,93 @@ def create_gisi_metadata(metadata_xml_paths):
     save_json('data/outputs/temp/lastgisi_output.json', {'output_files': output_xml_files})
 
 
+def get_empty_digform_layers(metadata_xml_directory):
+
+    empty_xmls = []
+    xml_files = []
+    for root, dirs, files in os.walk('data/outputs', topdown=True):
+        for name in files:
+            if name.endswith('.xml'):
+                xml_files.append(os.path.join(root, name))
+    for xml in xml_files:
+        # import pdb; pdb.set_trace()
+        element_tree = ET.parse(xml)
+        root = element_tree.getroot()
+        stdorder = root.find('distinfo').find('stdorder')
+        for digform in stdorder.findall('digform'):
+            for e in digform.iter('networkr'):
+                if e.text == 'empty':
+                    empty_xmls.append(xml)
+
+    return set(empty_xmls)
+
+
+def get_pretty_element(root_element):
+    '''Return a pretty-printed XML string for the Element.
+    '''
+    rough_string = ET.tostring(root_element, 'utf-8')
+    reparsed = minidom.parseString(rough_string)
+    return ET.fromstring(reparsed.toprettyxml(indent="    "))
+
+
+def update_digform_elements(xml_path, resource_locations):
+    element_tree = ET.parse(xml_path)
+    distinfo = element_tree.getroot().find('distinfo')
+    stdorder = distinfo.find('stdorder')
+    # stdorder_index = distinfo.getchildren().index(stdorder)
+    insert_i = 0
+    for e in stdorder.findall('digform'):
+        stdorder.remove(e)
+    for resource in resource_locations:
+        formname, networkr = resource
+        digform = ET.fromstring(DIGFORM_STRING)
+        digform.find('digtinfo').find('formname').text = formname
+        for e in digform.iter('networkr'):
+            e.text = networkr
+        digform = get_pretty_element(digform)
+        stdorder.insert(insert_i, digform)
+        insert_i += 1
+    element_tree.write(xml_path, encoding='UTF-8')
+
+
+def create_resource_locations(xml_path):
+    full_name = os.path.basename(xml_path)
+    category_name = full_name.split('.')[1]
+    feature_name = full_name.split('.')[2]
+    ftp_path_fstring = r'ftp://ftp.agrc.utah.gov/UtahSGID_Vector/UTM12_NAD83/{}/UnpackagedData/{}/_Statewide/{}.zip'
+    resources = (
+         (FormName.DOWNLOADABLE_GDB,
+          ftp_path_fstring.format(category_name, feature_name, feature_name + '_gdb')),
+         (FormName.DOWNLOADABLE_SHAPEFILE,
+          ftp_path_fstring.format(category_name, feature_name, feature_name + '_shp'))
+     )
+    return resources
+
+
 if __name__ == '__main__':
-    catnames = get_categories()
-    save_json('connections.json', {cat: "Database Connections\\DC_{}@SGID10@sgid.agrc.utah.gov.sde".format(cat.title()) for cat in catnames})
-    # featurenames = get_features_in_category(
-    #     [
-    #         'HEALTH',
-    #         'GEOSCIENCE',
-    #         'HISTORY',
-    #         'FARMING',
-    #         'PLANNING'
-    #     ]
-    # )
-    # featurenames.remove('SGID10.HEALTH.HealthCareFacilities')
-    featurenames = [
-        'SGID10.WATER.LakesNHDHighRes',
-        'SGID10.WATER.StreamsNHDHighRes',
-        'SGID10.WATER.SpringsNHDHighRes',
-        'SGID10.WATER.NHDHighRes_PointsAll',
-        'SGID10.WATER.StreamGaugesNHD']
-    export_sgid_metadata('data', feature_classes=featurenames)
-    create_gisi_metadata([os.path.join('data', f + '.xml') for f in featurenames])
+    # catnames = get_categories()
+    # save_json('connections.json', {cat: "Database Connections\\DC_{}@SGID10@sgid.agrc.utah.gov.sde".format(cat.title()) for cat in catnames})
+    # # featurenames = get_features_in_category(
+    # #     [
+    # #         'HEALTH',
+    # #         'GEOSCIENCE',
+    # #         'HISTORY',
+    # #         'FARMING',
+    # #         'PLANNING'
+    # #     ]
+    # # )
+    # # featurenames.remove('SGID10.HEALTH.HealthCareFacilities')
+    # featurenames = [
+    #     'SGID10.WATER.LakesNHDHighRes',
+    #     'SGID10.WATER.StreamsNHDHighRes',
+    #     'SGID10.WATER.SpringsNHDHighRes',
+    #     'SGID10.WATER.NHDHighRes_PointsAll',
+    #     'SGID10.WATER.StreamGaugesNHD']
+    # export_sgid_metadata('data', feature_classes=featurenames)
+    # create_gisi_metadata([os.path.join('data', f + '.xml') for f in featurenames])
+
+    empties = get_empty_digform_layers('f')
+    print len(empties)
+    # for xml in empties:
+    #     print 'Updated', xml
+    #     update_digform_elements(xml, create_resource_locations(xml))
