@@ -9,12 +9,24 @@ import os
 import io
 import time
 
-try:
-    import argparse
-    flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
-except ImportError:
-    flags = None
+# try:
+#     import argparse
+#     drive_parser = argparse.ArgumentParser(parents=[tools.argparser])
+#     #  flags = drive_parser.parse_args()
+# except ImportError:
+#     flags = None
 
+
+class flags_shim(object):
+
+    def __init__(self):
+        self.auth_host_name = 'localhost'
+        self.noauth_local_webserver = False
+        self.auth_host_port = [8080, 8090]
+        self.logging_level = 'ERROR'
+
+
+flags = flags_shim()
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/drive-python-quickstart.json
 SCOPES = 'https://www.googleapis.com/auth/drive'
@@ -242,7 +254,7 @@ def create_drive_file(name, parent_ids, media_body, service):
                     raise Exception('Upload Failed: {}'.format(e))
                 print 'Retrying upload in: {} seconds'.format(backoff)
                 time.sleep(backoff)
-                status, response = request.next_chunk()
+                # status, response = request.next_chunk()
                 backoff *= 3
             else:
                 raise Exception('Upload Failed')

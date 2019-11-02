@@ -1,7 +1,7 @@
 import os
 import re
 import json
-# import arcpy
+import arcpy
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime
@@ -332,7 +332,6 @@ def get_empty_digform_layers(metadata_xml_directory):
             if name.endswith('.xml'):
                 xml_files.append(os.path.join(root, name))
     for xml in xml_files:
-        # import pdb; pdb.set_trace()
         element_tree = ET.parse(xml)
         root = element_tree.getroot()
         stdorder = root.find('distinfo').find('stdorder')
@@ -372,7 +371,7 @@ def update_digform_elements(xml_path, resource_locations):
     element_tree.write(xml_path, encoding='UTF-8')
 
 
-def create_resource_locations(xml_path):
+def create_resource_locations(download_links):
     full_name = os.path.basename(xml_path)
     category_name = full_name.split('.')[1]
     feature_name = full_name.split('.')[2]
@@ -385,8 +384,100 @@ def create_resource_locations(xml_path):
      )
     return resources
 
+def create_metadata_from_featureclass(featurenames, output_directory):
+    export_sgid_metadata(output_directory, feature_classes=featurenames)
+    create_gisi_metadata([os.path.join(output_directory, f + '.xml') for f in featurenames])
+
+
+def format_titles():
+    xml_files = []
+    for root, dirs, files in os.walk('data/outputs', topdown=True):
+        for name in files:
+            if name.endswith('.xml'):
+                xml_files.append(os.path.join(root, name))
+        break
+    for xml in xml_files:
+        # print xml
+        element_tree = ET.parse(xml)
+        root = element_tree.getroot()
+        for e in root.iter('title'):
+            if e.text is None:
+                print xml
+                return
+            s = e.text.replace('_', ' ')
+            s = re.sub(r'([A-Z]+[a-z]+)', r'\1 ', s)
+            s = re.sub(r'(PLSS|BLM|USFS|NHD|UWC|UWA|DNR|EMS|USGS)', r'\1 ', s)
+            s = re.sub(r'(\d+)', r'\1 ', s)
+            s = re.sub(r'(\s+)', r' ', s)
+            print e.text, '\n', s
+            e.text = s.strip()
+            element_tree.write(xml, encoding='UTF-8')
+
+
+def update_digform_with_drive_links(feature_link_json):
+    feature_links = None
+    with open(feature_link_json, 'r') as l:
+        feature_links = json.load(l)
+
+    xml_files = []
+    for root, dirs, files in os.walk('data/outputs', topdown=True):
+        for name in files:
+            if name.endswith('.xml'):
+                xml_files.append(os.path.join(root, name))
+        break
+
+    for xml in xml_files:
+        name = os.path.basename(xml).replace('.xml', '').lower()
+        if name in feature_links:
+            resources = (
+                 (FormName.DOWNLOADABLE_GDB,
+                  feature_links[name]['gdb']),
+                 (FormName.DOWNLOADABLE_SHAPEFILE,
+                  feature_links[name]['shp']))
+            update_digform_elements(xml, resources)
+            # print xml, resources
+        else:
+            print xml, 'No Links Found!'
+
+
+def update_onlink_links():
+    """Change onlink in FGDC metadata to point to AGRC data pages."""
+    xml_files = []
+    for root, dirs, files in os.walk('data/outputs', topdown=True):
+        for name in files:
+            if name.endswith('.xml'):
+                xml_files.append(os.path.join(root, name))
+        break
+
+    for xml in xml_files:
+        name = os.path.basename(xml).replace('.xml', '').lower()
+        category_name = name.split('.')[1]
+        element_tree = ET.parse(xml)
+        root = element_tree.getroot()
+        for e in root.iter('onlink'):
+            e.text = 'https://gis.utah.gov/data/{}'.format(category_name.lower().strip())
+            print category_name, e.text
+            element_tree.write(xml, encoding='UTF-8')
+
 
 if __name__ == '__main__':
+
+    # update_onlink_links()
+
+    feature_names = [
+        'SGID10.TRANSPORTATION.Railroad_Mileposts'
+    ]
+    export_features = []
+    for f in feature_names:
+        workspace = r'Database Connections\Connection to sgid.agrc.utah.gov.sde'
+        if not arcpy.Exists(os.path.join(workspace, f)):
+            print 'not found', f
+        else:
+            export_features.append(f)
+    
+    create_metadata_from_featureclass(export_features, 'data')
+
+
     # catnames = get_categories()
     # save_json('connections.json', {cat: "Database Connections\\DC_{}@SGID10@sgid.agrc.utah.gov.sde".format(cat.title()) for cat in catnames})
     # # featurenames = get_features_in_category(
@@ -408,8 +499,8 @@ if __name__ == '__main__':
     # export_sgid_metadata('data', feature_classes=featurenames)
     # create_gisi_metadata([os.path.join('data', f + '.xml') for f in featurenames])
 
-    empties = get_empty_digform_layers('f')
-    print len(empties)
+    # empties = get_empty_digform_layers('f')
+    # print len(empties)
     # for xml in empties:
     #     print 'Updated', xml
     #     update_digform_elements(xml, create_resource_locations(xml))

@@ -3,6 +3,7 @@
 import os
 import re
 import json
+import shutil
 from ntpath import normpath
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
@@ -10,9 +11,9 @@ from datetime import datetime
 from time import strftime, clock
 import drive_loader
 import csv
-import gspread
+import argparse
+# import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-
 
 date_time_run = strftime("%Y%m%d_%H%M%S")
 
@@ -274,12 +275,96 @@ def check_category_and_update(past_update_time, category_name):
     return updated_xml
 
 
-if __name__ == '__main__':
+def copy_gisimetadata_to_waf(waf_path, xml_files, excluded_xmls):
+    paths = [xml for xml in xml_files if xml not in excluded_xmls]
+    for path in paths:
+        dst_path = os.path.join(waf_path, os.path.basename(path))
+        print dst_path
+        shutil.copy(path, dst_path)
 
-    # Check for updates
-    past_update_time = load_json('update_config.json')['last_update']
-    updated_xml = check_category_and_update("2017-01-04T20:53:45.737000", 'WATER')
-    import_metadata(updated_xml)
+
+def print_updated(last_update_time):
+    updated = list_updated_files(past_update_time, )
+    for f in updated:
+        print f
+    print 'Total:', len(updated)
+
+
+def upload_last_exported_to_drive():
+    # Load elements as google docs
+    xml_files = load_json(LAST_GISI_OUTPUT)['output_files']
+    load_elements_to_drive(xml_files, ['purpose', 'abstract'])
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Update metadata from docs')
+
+    parser.add_argument('--list', action='store_true', dest='list_updated',
+                        help='List all docs updated after last update date')
+    parser.add_argument('--update', action='store_true', dest='update_metadata',
+                        help='Update metadata files with docs updated after last update date')
+    parser.add_argument('--import', action='store_true', dest='import_metadata',
+                        help='Update metadata files with updated docs and import into SGID')
+    parser.add_argument('--waf', action='store_true', dest='copy_to_waf',
+                        help='Copy updated files to GIS Inventory web accessible folder')
+    parser.add_argument('--date', action='store', dest='last_update',
+                        help='Date string in ISO format YYYY-MM-DDTHH:MM:SS.UUU')
+    parser.add_argument('--upload_export', action='store_true', dest='upload_export',
+                        help='Upload abstract and purpose of last metadata export to drive')
+
+    args = parser.parse_args()
+
+    past_update_time = None
+    # --date
+    if args.last_update:
+        past_update_time = args.last_update
+    else:
+        past_update_time = load_json('update_config.json')['last_update']
+
+    # --list
+    if args.list_updated:
+        print_updated(past_update_time)
+
+    updated_xml = None
+    # --update --import
+    if args.update_metadata or args.import_metadata:
+        updated_xml = check_files_and_update(past_update_time)
+        print 'Total files updated:', len(updated_xml)
+
+    # --import
+    if args.import_metadata and len(updated_xml) > 0:
+        import_metadata(updated_xml)
+
+    # --waf
+    if args.copy_to_waf:
+        updated_xml = check_files_and_update(past_update_time)
+        print 'Total files updated:', len(updated_xml)
+        import_metadata(updated_xml)
+
+        waf_path = r'J:\UtahSGID_Vector\UTM12_NAD83\Metadata'
+        excluded_xmls = [
+                "data/outputs/SGID10.GEOSCIENCE.Units_MoabSanRafael.xml",
+                "data/outputs/SGID10.GEOSCIENCE.Units_Nephi.xml",
+                "data/outputs/SGID10.GEOSCIENCE.Units_Price.xml",
+                "data/outputs/SGID10.HEALTH.HealthDistricts.xml",
+                "data/outputs/SGID10.HEALTH.HealthDistricts2015.xml",
+                "data/outputs/SGID10.PLANNING.UWC2008CherryStemRoads.xml",
+                "data/outputs/SGID10.PLANNING.WildernessProp_RedRock.xml",
+                "data/outputs/SGID10.PLANNING.WildernessProp_WashingtonCo.xml",
+                "data/outputs/SGID10.CADASTRE.Parcels.xml",
+                "data/outputs/SGID10.CADASTRE.Parcels_LIR.xml",
+                "data/outputs/SGID10.TRANSPORTATION.RoadsODM.xml"
+        ]
+
+        excluded_xmls = [os.path.basename(x) for x in excluded_xmls]
+        updated_xml = [x for x in updated_xml if os.path.basename(x) not in excluded_xmls]
+        copy_gisimetadata_to_waf(waf_path, updated_xml, excluded_xmls)
+
+    # --upload_export
+    if args.upload_export:
+        upload_last_exported_to_drive()
+
+    # updated_xml = check_category_and_update("2017-01-04T20:53:45.737000", 'WATER')
 
     # complete_folder_ids = get_working_spreadsheet_completed_ids()
     # # print len(complete_folder_ids)
@@ -290,7 +375,6 @@ if __name__ == '__main__':
     #
     # print len(updated_xml)
     # import_metadata(updated_xml)
-
 
     # Load elements as google docs
     # xml_files = load_json(LAST_GISI_OUTPUT)['output_files']
@@ -306,9 +390,3 @@ if __name__ == '__main__':
     #         if name.endswith('.xml'):
     #             xml_files.append(os.path.join(root, name))
     # get_empty_element_xml(xml_files, ['abstract'])
-
-    # : List files updated after date
-    # updated = list_updated_files(past_update_time, )
-    # for f in updated:
-    #     print f
-    # print len(updated)
